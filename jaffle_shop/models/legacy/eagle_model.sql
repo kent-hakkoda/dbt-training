@@ -28,20 +28,17 @@ SELECT MAX(DATE::date) as max_date FROM "EAGLE_DB_ANALYTICS"."DEVELOPMENT"."EAGL
        0 AS "20_TO_GCP",
        TO_LP_HURDLE_CALC + "80_TO_LP" AS CURRENT_LP_DIST,
        TO_LP_HURDLE_CALC + "80_TO_LP" AS ROLLING_LP_DIST,
-       TO_LP_HURDLE_CALC + "20_TO_GCP" AS CURRENT_GP_DIST,
+       CATCHUP_TO_GP + "20_TO_GCP" AS CURRENT_GP_DIST,
        TO_LP_HURDLE_CALC + "20_TO_GCP" AS ROLLING_GP_DIST
 
        
-       FROM {{ ref('eagle') }} t1, min_date
+       FROM "EAGLE_DB_ANALYTICS"."DEVELOPMENT"."EAGLE" t1, min_date
        WHERE DATE = min_date  
-  
-//)
-//select * from cte;
 			
 UNION ALL
    
    SELECT
-       t.DATE::date as DATE,
+       t.DATE::date,
        t.GCF,
        t.HURDLE,
 //  
@@ -50,22 +47,22 @@ UNION ALL
          WHEN COALESCE(t.HURDLE,0) > 0
          THEN t.HURDLE
          ELSE 0
-         END AS MAX_HURDLE,    
+         END AS R_MAX_HURDLE,    
       CASE
-          WHEN COALESCE(t.GCF, 0) < COALESCE(MAX_HURDLE, 0)
+          WHEN COALESCE(t.GCF, 0) < COALESCE(R_MAX_HURDLE, 0)
           THEN t.GCF
-          ELSE MAX_HURDLE END AS TO_LP_HURDLE_CALC,
+          ELSE R_MAX_HURDLE END AS R_TO_LP_HURDLE_CALC,
         
        --CATCHUP
-       MAX(array_construct(0,MIN(array_construct(t.GCF - TO_LP_HURDLE_CALC,cte.ROLLING_LP_DIST * 0.2 / 0.8 - cte.ROLLING_GP_DIST)))) AS CATCHUP_TO_GP,
+       GREATEST(0,LEAST(t.GCF - R_TO_LP_HURDLE_CALC,cte.ROLLING_LP_DIST * 0.2 / 0.8 - cte.ROLLING_GP_DIST)) AS R_CATCHUP_TO_GP,
        
-       (t.GCF - TO_LP_HURDLE_CALC - CATCHUP_TO_GP)*8 AS "80_TO_LP",
-       t.GCF - TO_LP_HURDLE_CALC - CATCHUP_TO_GP - "80_TO_LP" AS "20_TO_GCP",
-       TO_LP_HURDLE_CALC + "80_TO_LP" AS CURRENT_LP_DIST,
-       cte.ROLLING_LP_DIST + CURRENT_LP_DIST AS ROLLING_LP_DIST,
-       TO_LP_HURDLE_CALC + "20_TO_GCP" AS CURRENT_GP_DIST,
-       cte.ROLLING_GP_DIST + CURRENT_GP_DIST AS ROLLING_GP_DIST
-   FROM {{ ref('eagle') }} as t INNER JOIN CTE
+       (t.GCF - R_TO_LP_HURDLE_CALC - R_CATCHUP_TO_GP)*8 AS "R_80_TO_LP",
+       t.GCF - R_TO_LP_HURDLE_CALC - R_CATCHUP_TO_GP - "80_TO_LP" AS "R_20_TO_GCP",
+       R_TO_LP_HURDLE_CALC + "R_80_TO_LP" AS R_CURRENT_LP_DIST,
+       cte.ROLLING_LP_DIST + R_CURRENT_LP_DIST AS R_ROLLING_LP_DIST,
+       CATCHUP_TO_GP + "R_20_TO_GCP" AS R_CURRENT_GP_DIST,
+       cte.ROLLING_GP_DIST + R_CURRENT_GP_DIST AS R_ROLLING_GP_DIST
+   FROM "EAGLE_DB_ANALYTICS"."DEVELOPMENT"."EAGLE" as t INNER JOIN CTE
     on t.date::date = last_day(dateadd(month,1,cte.date))
    join
    max_date 
@@ -74,4 +71,19 @@ UNION ALL
   
   )
     
-    select * from cte;
+    select
+        DATE,
+        GCF,
+        HURDLE,
+        TO_LP_HURDLE_CALC,
+        CATCHUP_TO_GP,
+        "80_TO_LP",
+        "20_TO_GCP",
+        CURRENT_LP_DIST,
+        CURRENT_GP_DIST
+        --,
+        --ROLLING_LP_DIST,
+        --ROLLING_GP_DIST
+        
+        from cte
+        ORDER BY DATE ASC
